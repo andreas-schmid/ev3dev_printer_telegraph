@@ -5,6 +5,8 @@ from ev3dev2.motor import (LargeMotor, MediumMotor, OUTPUT_B, OUTPUT_C,
                            OUTPUT_D, SpeedPercent)
 from ev3dev2.sensor import INPUT_3, INPUT_4
 from ev3dev2.sensor.lego import TouchSensor, ColorSensor
+from ev3dev2.sound import Sound
+from ev3dev2.stopwatch import StopWatch
 
 
 MORSE_CODE = {'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
@@ -53,10 +55,74 @@ class LegoPrinter(object):
         self.motor_paper_feed.stop()
 
 
+class Telegraph(object):
+
+    def __init__(self, ts_port):
+        self.touch_sensor = TouchSensor(ts_port)
+        self.speaker = Sound()
+        self.morse_code = ''
+        self.decode = ''
+
+    def sendMorseMessage(self):
+        timer = StopWatch()
+        morse_signal = False
+        beep = None
+        print('Ready to receive Morse Code!')
+        while True:
+            if self.touch_sensor.is_pressed:
+                morse_signal = True
+                timer.restart()
+                beep = self.speaker.beep("-f 750 -l 31536000000", 1)
+                self.touch_sensor.wait_for_released()
+            else:
+                if beep is not None:
+                    beep.terminate()
+                if morse_signal:
+                    if timer.value_ms < 200:
+                        self.morse_code += '.'
+                    else:
+                        self.morse_code += '-'
+                    morse_signal = False
+                    print(self.morse_code)
+                else:
+                    if self.morse_code and 600 <= timer.value_ms < 1000:
+                        if self.morse_code[-1] != ' ':
+                            self.morse_code += ' '
+                            print(self.morse_code)
+                    elif self.morse_code and 1000 <= timer.value_ms < 2000:
+                        if self.morse_code[-2:] != '  ':
+                            self.morse_code += ' '
+                            print(self.morse_code)
+                    elif self.morse_code and timer.value_ms > 5000:
+                        break
+        return self.morse_code
+
+    def decodeMorseMessage(self, message):
+        text = ''
+        counter = 0
+        for letter in message:
+            if letter != ' ':
+                counter = 0
+                text += letter
+            else:
+                counter += 1
+                if counter == 2:
+                    self.decode += ' '
+                else:
+                    self.decode += list(MORSE_CODE.keys())[list(
+                        MORSE_CODE.values()).index(text)]
+                    text = ''
+        return self.decode
+
+
 def main():
-    printer = LegoPrinter(OUTPUT_C, OUTPUT_D, OUTPUT_B, INPUT_3, INPUT_4)
-    printer.feedIn()
-    printer.feedOut()
+    # printer = LegoPrinter(OUTPUT_C, OUTPUT_D, OUTPUT_B, INPUT_3, INPUT_4)
+    # printer.feedIn()
+    # printer.feedOut()
+    telegraph = Telegraph(INPUT_4)
+    telegraph.sendMorseMessage()
+    telegraph.decodeMorseMessage(telegraph.morse_code)
+    print(telegraph.decode)
 
 
 if __name__ == "__main__":
