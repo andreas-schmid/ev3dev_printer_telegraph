@@ -7,38 +7,62 @@ from ev3dev2.sensor import INPUT_3, INPUT_4
 from ev3dev2.sensor.lego import TouchSensor, ColorSensor
 from ev3dev2.sound import Sound
 from ev3dev2.stopwatch import StopWatch
-
-
-MORSE_CODE = {'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
-              'F': '..-.', 'G': '--.', 'H': '....', 'I': '..', 'J': '.---',
-              'K': '-.-', 'L': '.-..', 'M': '--', 'N': '-.', 'O': '---',
-              'P': '.--.', 'Q': '--.-', 'R': '.-.', 'S': '...', 'T': '-',
-              'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-',
-              'Y': '-.--', 'Z': '--..', '1': '.----', '2': '..---',
-              '3': '...--', '4': '....-', '5': '.....', '6': '-....',
-              '7': '--...', '8': '---..', '9': '----.', '0': '-----',
-              ', ': '--..--', '.': '.-.-.-', '?': '..--..', '/': '-..-.',
-              '-': '-....-', '(': '-.--.', ')': '-.--.-'}
+from ev3dev2.button import Button
 
 
 class LegoPrinter(object):
 
-    def __init__(self, mpf_port, mpl_port, mph_port, cs_port, ts_port):
+    calibrated = False
+    # test pattern
+    helloWorld = 'Hello World'
+
+    def __init__(self, mpf_port, mpl_port, mph_port, cs_port, ts_port,
+                 line_position=525, line_width=1050, letter_size=10,
+                 letter_spacing=10):
 
         self.motor_paper_feed = LargeMotor(mpf_port)
         self.motor_pen_lift = MediumMotor(mpl_port)
         self.motor_pen_horizontal = LargeMotor(mph_port)
         self.color_sensor = ColorSensor(cs_port)
         self.touch_sensor = TouchSensor(ts_port)
-
-        self.lineposition = 525
-        self.linewidth = 1050
-        self.lettersize = 20
-        self.textsize = 10
-
-        self.helloworld = [7, 4, 11, 11, 14, 26, 22, 14, 17, 11, 3, 27]
-
-        self.calibrated = False
+        for i in [self.motor_paper_feed, self.motor_pen_lift,
+                  self.motor_pen_horizontal, self.color_sensor,
+                  self.touch_sensor]:
+            assert i.connected
+        self.btn = Button()
+        self.lineposition = line_position
+        self.linewidth = line_width
+        self.lettersize = letter_size
+        self.letterspacing = letter_spacing
+        # dictionary connecting letters and printing methods
+        self.letters = {'A': self.printA,
+                        'B': self.printB,
+                        'C': self.printC,
+                        'D': self.printD,
+                        'E': self.printE,
+                        'F': self.printF,
+                        'G': self.printG,
+                        'H': self.printH,
+                        'I': self.printI,
+                        'J': self.printJ,
+                        'K': self.printK,
+                        'L': self.printL,
+                        'M': self.printM,
+                        'N': self.printN,
+                        'O': self.printO,
+                        'P': self.printP,
+                        'Q': self.printQ,
+                        'R': self.printR,
+                        'S': self.printS,
+                        'T': self.printT,
+                        'U': self.printU,
+                        'V': self.printV,
+                        'W': self.printW,
+                        'X': self.printX,
+                        'Y': self.printY,
+                        'Z': self.printZ,
+                        ' ': self.printSpace
+                        }
 
     def feedOut(self, speed=100):
         self.motor_paper_feed.run_forever(speed_sp=speed)
@@ -54,11 +78,205 @@ class LegoPrinter(object):
             time.sleep(0.1)
         self.motor_paper_feed.stop()
 
+    def liftPen(self, speed):
+        self.motor_pen_lift.on_for_degrees(speed=speed, degrees=180)
+        self.motor_pen_lift.wait_until_not_moving()
+
+    def movePaper(self, speed):
+        # gear reduction in paper feed motor: 12 / 36
+        self.motor_paper_feed.on_for_degrees(speed=speed,
+                                             degrees=(36/12)*self.lettersize)
+        self.motor_paper_feed.wait_until_not_moving()
+
+    def movePen(self, speed):
+        # gear reduction in pen horizontal motor: 12 / 36
+        self.motor_pen_horizontal.on_for_degrees(
+            speed=speed, degrees=(36/12)*self.letterspacing)
+        self.motor_pen_horizontal.wait_until_not_moving()
+
+    def carriageReturn(self):
+        pass
+
+    def manualPaperFeed(self, speed=100):
+        while not self.btn.enter:
+            if self.btn.up:
+                self.motor_paper_feed.run_forever(speed_sp=-speed)
+                while self.btn.up:
+                    time.sleep(0.1)
+                self.motor_paper_feed.stop()
+            elif self.btn.down:
+                self.motor_paper_feed.run_forever(speed_sp=speed)
+                while self.btn.down:
+                    time.sleep(0.1)
+                self.motor_paper_feed.stop()
+
+    def calibrate(self):
+        while not self.btn.enter:
+            if self.btn.right:
+                self.motor_pen_horizontal.run_forever(speed_sp=100)
+                while self.btn.right:
+                    time.sleep(0.1)
+                self.motor_pen_horizontal.stop()
+            elif self.btn.left:
+                self.motor_pen_horizontal.run_forever(speed_sp=-100)
+                while self.btn.left:
+                    time.sleep(0.1)
+                self.motor_pen_horizontal.stop()
+            elif self.btn.up:
+                self.motor_pen_lift.run_forever(speed_sp=100)
+                while self.btn.up:
+                    time.sleep(0.1)
+                self.motor_pen_lift.stop()
+            elif self.btn.down:
+                self.motor_pen_lift.run_forever(speed_sp=-100)
+                while self.btn.down:
+                    time.sleep(0.1)
+                self.motor_pen_lift.stop()
+        self.motor_pen_horizontal.reset()
+        self.motor_pen_lift.reset()
+        self.calibrated = True
+        self.motor_pen_horizontal.on_to_position(position=self.lineposition,
+                                                 speed=100)
+
+    def printA(self):
+        pass
+
+    def printB(self):
+        pass
+
+    def printC(self):
+        pass
+
+    def printD(self):
+        pass
+
+    def printE(self):
+        pass
+
+    def printF(self):
+        pass
+
+    def printG(self):
+        pass
+
+    def printH(self):
+        pass
+
+    def printI(self):
+        self.movePaper(-25)
+        self.liftPen(-25)
+        self.movePaper(25)
+        self.liftPen(25)
+
+    def printJ(self):
+        pass
+
+    def printK(self):
+        pass
+
+    def printL(self):
+        pass
+
+    def printM(self):
+        pass
+
+    def printN(self):
+        pass
+
+    def printO(self):
+        pass
+
+    def printP(self):
+        pass
+
+    def printQ(self):
+        pass
+
+    def printR(self):
+        pass
+
+    def printS(self):
+        pass
+
+    def printT(self):
+        pass
+
+    def printU(self):
+        pass
+
+    def printV(self):
+        pass
+
+    def printW(self):
+        pass
+
+    def printX(self):
+        pass
+
+    def printY(self):
+        pass
+
+    def printZ(self):
+        pass
+
+    def printSpace(self):
+        pass
+
+    def printerQueue(self, text):
+        for letter in text:
+            if letter in self.letters.keys():
+                self.letters[letter]()
+
 
 class Telegraph(object):
 
+    MORSE_CODE = {'A': '.-',
+                  'B': '-...',
+                  'C': '-.-.',
+                  'D': '-..',
+                  'E': '.',
+                  'F': '..-.',
+                  'G': '--.',
+                  'H': '....',
+                  'I': '..',
+                  'J': '.---',
+                  'K': '-.-',
+                  'L': '.-..',
+                  'M': '--',
+                  'N': '-.',
+                  'O': '---',
+                  'P': '.--.',
+                  'Q': '--.-',
+                  'R': '.-.',
+                  'S': '...',
+                  'T': '-',
+                  'U': '..-',
+                  'V': '...-',
+                  'W': '.--',
+                  'X': '-..-',
+                  'Y': '-.--',
+                  'Z': '--..',
+                  '1': '.----',
+                  '2': '..---',
+                  '3': '...--',
+                  '4': '....-',
+                  '5': '.....',
+                  '6': '-....',
+                  '7': '--...',
+                  '8': '---..',
+                  '9': '----.',
+                  '0': '-----',
+                  ', ': '--..--',
+                  '.': '.-.-.-',
+                  '?': '..--..',
+                  '/': '-..-.',
+                  '-': '-....-',
+                  '(': '-.--.',
+                  ')': '-.--.-'}
+
     def __init__(self, ts_port):
         self.touch_sensor = TouchSensor(ts_port)
+        assert self.touch_sensor.connected
         self.speaker = Sound()
         self.morse_code = ''
         self.decode = ''
@@ -88,11 +306,9 @@ class Telegraph(object):
                     if self.morse_code and 600 <= timer.value_ms < 1000:
                         if self.morse_code[-1] != ' ':
                             self.morse_code += ' '
-                            print(self.morse_code)
                     elif self.morse_code and 1000 <= timer.value_ms < 2000:
                         if self.morse_code[-2:] != '  ':
                             self.morse_code += ' '
-                            print(self.morse_code)
                     elif self.morse_code and timer.value_ms > 5000:
                         break
         return self.morse_code
@@ -109,20 +325,34 @@ class Telegraph(object):
                 if counter == 2:
                     self.decode += ' '
                 else:
-                    self.decode += list(MORSE_CODE.keys())[list(
-                        MORSE_CODE.values()).index(text)]
+                    self.decode += list(self.MORSE_CODE.keys())[list(
+                        self.MORSE_CODE.values()).index(text)]
                     text = ''
         return self.decode
 
 
 def main():
-    # printer = LegoPrinter(OUTPUT_C, OUTPUT_D, OUTPUT_B, INPUT_3, INPUT_4)
+    printer_parameter = {'mpf_port': OUTPUT_C,
+                         'mph_port': OUTPUT_B,
+                         'mpl_port': OUTPUT_D,
+                         'cs_port': INPUT_3,
+                         'ts_port': INPUT_4,
+                         'line_position': 525,
+                         'line_width': 1050,
+                         'letter_size': 10,
+                         'letter_spacing': 10}
+    printer = LegoPrinter(**printer_parameter)
     # printer.feedIn()
     # printer.feedOut()
-    telegraph = Telegraph(INPUT_4)
-    telegraph.sendMorseMessage()
-    telegraph.decodeMorseMessage(telegraph.morse_code)
-    print(telegraph.decode)
+    printer.manualPaperFeed()
+    # printer.calibrate()
+    # telegraph = Telegraph(INPUT_4)
+    # telegraph.sendMorseMessage()
+    # telegraph.decodeMorseMessage(telegraph.morse_code)
+    # print(telegraph.decode)
+    # printer.liftPen(25)
+    # printer.printI()
+    # printer.printerQueue('I')
 
 
 if __name__ == "__main__":
